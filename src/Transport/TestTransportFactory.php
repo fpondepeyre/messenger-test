@@ -19,6 +19,9 @@ final class TestTransportFactory implements TransportFactoryInterface
      */
     private $bus;
 
+    /** @var array<string, self> */
+    private static $transports = [];
+
     public function __construct(MessageBusInterface $bus)
     {
         $this->bus = $bus;
@@ -26,12 +29,17 @@ final class TestTransportFactory implements TransportFactoryInterface
 
     public function createTransport(string $dsn, array $options, SerializerInterface $serializer): TransportInterface
     {
-        return new TestTransport($options['transport_name'], $this->bus, $serializer, $this->parseDsn($dsn));
+        return self::$transports[$options['transport_name']] = self::$transports[$options['transport_name']] ?? new TestTransport($this->bus, $serializer, $this->parseDsn($dsn));
     }
 
     public function supports(string $dsn, array $options): bool
     {
         return 0 === \mb_strpos($dsn, 'test://');
+    }
+
+    public static function reset(): void
+    {
+        self::$transports = [];
     }
 
     private function parseDsn(string $dsn): array
@@ -43,8 +51,8 @@ final class TestTransportFactory implements TransportFactoryInterface
         }
 
         return [
-            'intercept' => \filter_var($query['intercept'] ?? true, FILTER_VALIDATE_BOOLEAN),
-            'catch_exceptions' => \filter_var($query['catch_exceptions'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            'intercept' => \filter_var($query['intercept'] ?? true, \FILTER_VALIDATE_BOOLEAN),
+            'catch_exceptions' => \filter_var($query['catch_exceptions'] ?? true, \FILTER_VALIDATE_BOOLEAN),
         ];
     }
 }
