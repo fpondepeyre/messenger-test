@@ -52,17 +52,17 @@ class MyTest extends KernelTestCase // or WebTestCase
         // ...some code that routes messages to your configured transport
 
         // assert against the queue
-        $this->transport()->queue()->assertEmpty(); 
-        $this->transport()->queue()->assertNotEmpty(); 
-        $this->transport()->queue()->assertCount(3);
-        $this->transport()->queue()->assertContains(MyMessage::class); // queue contains this message
-        $this->transport()->queue()->assertContains(MyMessage::class, 3); // queue contains this message 3 times
-        $this->transport()->queue()->assertNotContains(MyMessage::class); // queue not contains this message
+        $this->messenger()->queue()->assertEmpty(); 
+        $this->messenger()->queue()->assertNotEmpty(); 
+        $this->messenger()->queue()->assertCount(3);
+        $this->messenger()->queue()->assertContains(MyMessage::class); // queue contains this message
+        $this->messenger()->queue()->assertContains(MyMessage::class, 3); // queue contains this message 3 times
+        $this->messenger()->queue()->assertNotContains(MyMessage::class); // queue not contains this message
         
         // access the queue data
-        $this->transport()->queue(); // Envelope[]
-        $this->transport()->queue()->messages(); // object[] the messages unwrapped from envelope
-        $this->transport()->queue()->messages(MyMessage::class); // MyMessage[] just messages matching class
+        $this->messenger()->queue(); // Envelope[]
+        $this->messenger()->queue()->messages(); // object[] the messages unwrapped from envelope
+        $this->messenger()->queue()->messages(MyMessage::class); // MyMessage[] just messages matching class
     }
 }
 ```
@@ -82,23 +82,25 @@ class MyTest extends KernelTestCase // or WebTestCase
         // ...some code that routes messages to your configured transport
 
         // let's assume 3 messages are on this queue
-        $this->transport()->queue()->assertCount(3);
+        $this->messenger()->queue()->assertCount(3);
 
-        $this->transport()->process(1); // process one message
+        $this->messenger()->process(1); // process one message
 
-        $this->transport()->queue()->assertCount(2); // queue now only has 2 items
+        $this->messenger()->queue()->assertCount(2); // queue now only has 2 items
 
-        $this->transport()->process(); // process all messages on the queue
+        $this->messenger()->process(); // process all messages on the queue
 
-        $this->transport()->queue()->assertEmpty(); // queue is now empty
+        $this->messenger()->queue()->assertEmpty(); // queue is now empty
     }
 }
 ```
 
-### Other Transport Assertions
+### Other Transport Assertions and Helpers
 
 ```php
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Zenstruck\Messenger\Test\InteractsWithMessenger;
 
 class MyTest extends KernelTestCase // or WebTestCase
@@ -109,31 +111,44 @@ class MyTest extends KernelTestCase // or WebTestCase
     {
         // ...some code that routes messages to your configured transport
 
-        // assert against the sent messages
-        $this->transport()->sent()->assertEmpty(); 
-        $this->transport()->sent()->assertNotEmpty(); 
-        $this->transport()->sent()->assertCount(3);
-        $this->transport()->sent()->assertContains(MyMessage::class); // contains this message
-        $this->transport()->sent()->assertContains(MyMessage::class, 3); // contains this message 3 times
-        $this->transport()->sent()->assertNotContains(MyMessage::class); // not contains this message
+        $queue = $this->messenger()->queued();
+        $sent = $this->messenger()->sent();
+        $acknowledged = $this->messenger()->acknowledged(); // messages successfully processed
+        $rejected = $this->messenger()->rejected(); // messages not successfully processed
 
-        // assert against the acknowledged messages
-        // these are messages that were successfully processed
-        $this->transport()->acknowledged()->assertEmpty(); 
-        $this->transport()->acknowledged()->assertNotEmpty(); 
-        $this->transport()->acknowledged()->assertCount(3);
-        $this->transport()->acknowledged()->assertContains(MyMessage::class); // contains this message
-        $this->transport()->acknowledged()->assertContains(MyMessage::class, 3); // contains this message 3 times
-        $this->transport()->acknowledged()->assertNotContains(MyMessage::class); // not contains this message
+        // The 4 above variables are all instances of Zenstruck\Messenger\Test\EnvelopeCollection
+        // which is a countable iterator with the following api (using $queue for the example).
+        // Methods that return Envelope(s) actually return TestEnvelope(s) which is an Envelope
+        // decorator (all standard Envelope methods can be used) with some stamp-related assertions.
 
-        // assert against the rejected messages
-        // these are messages were not successfully processed
-        $this->transport()->rejected()->assertEmpty(); 
-        $this->transport()->rejected()->assertNotEmpty(); 
-        $this->transport()->rejected()->assertCount(3);
-        $this->transport()->rejected()->assertContains(MyMessage::class); // contains this message
-        $this->transport()->rejected()->assertContains(MyMessage::class, 3); // contains this message 3 times
-        $this->transport()->rejected()->assertNotContains(MyMessage::class); // not contains this message
+        // collection assertions
+        $queue->assertEmpty();
+        $queue->assertNotEmpty();
+        $queue->assertCount(3);
+        $queue->assertContains(MyMessage::class); // contains this message
+        $queue->assertContains(MyMessage::class, 3); // contains this message 3 times
+        $queue->assertNotContains(MyMessage::class); // not contains this message
+
+        // helpers
+        $queue->count(); // number of envelopes
+        $queue->all(); // TestEnvelope[]
+        $queue->messages(); // object[] the messages unwrapped from their envelope
+        $queue->messages(MyMessage::class); // MyMessage[] just instances of the passed message class
+
+        // get specific envelope
+        $queue->first(); // TestEnvelope - first one on the collection
+        $queue->first(MyMessage::class); // TestEnvelope - first where message class is MyMessage
+        $queue->first(function(Envelope $e) {
+            return $e->getMessage() instanceof MyMessage && $e->getMessage()->isSomething();
+        }); // TestEnvelope - first that matches the filter callback
+
+        // Equivalent to above - use the message class as the filter function typehint to
+        // auto-filter to this message type.
+        $queue->first(fn(MyMessage $m) => $m->isSomething()); // TestEnvelope
+
+        // TestEnvelope stamp assertions
+        $queue->first()->assertHasStamp(DelayStamp::class);
+        $queue->first()->assertNotHasStamp(DelayStamp::class);
     }
 }
 ```
@@ -156,13 +171,13 @@ class MyTest extends KernelTestCase // or WebTestCase
         // ...some code that routes messages to your configured transport
 
         // disable exception catching
-        $this->transport()->throwException();
+        $this->messenger()->throwException();
 
         // if processing fails, the exception will be thrown
-        $this->transport()->process(1);
+        $this->messenger()->process(1);
 
         // re-enable exception catching
-        $this->transport()->catchExceptions();
+        $this->messenger()->catchExceptions();
     }
 }
 ```
@@ -195,18 +210,18 @@ class MyTest extends KernelTestCase // or WebTestCase
     public function test_something(): void
     {
         // disable intercept
-        $this->transport()->unblock();
+        $this->messenger()->unblock();
 
         // ...some code that routes messages to your configured transport
         // ...these messages are handled immediately
 
         // enable intercept
-        $this->transport()->intercept();
+        $this->messenger()->intercept();
         
         // ...some code that routes messages to your configured transport
 
         // if messages are on the queue when calling unblock(), they are processed
-        $this->transport()->unblock();
+        $this->messenger()->unblock();
     }
 }
 ```
@@ -237,7 +252,7 @@ framework:
             high: test://
 ```
 
-In your tests, pass the name to the `transport()` method:
+In your tests, pass the name to the `messenger()` method:
 
 ```php
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -249,8 +264,8 @@ class MyTest extends KernelTestCase // or WebTestCase
 
     public function test_something(): void
     {
-        $this->transport('high')->queue();
-        $this->transport('low')->sent();
+        $this->messenger('high')->queue();
+        $this->messenger('low')->sent();
     }
 }
 ```
